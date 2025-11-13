@@ -46,6 +46,15 @@ Use a Kaggle/CSV dataset:
 python -m src.train --dataset csv --csv-path C:\path\to\train.csv --target SalePrice --drop-cols Id --plots-dir models/plots
 ```
 
+Quick start for Kaggle batch predictions:
+```powershell
+# 1) Train on Kaggle train.csv
+python -m src.train --dataset csv --csv-path "C:\Users\Haidar\Downloads\train.csv" --target SalePrice --drop-cols Id
+
+# 2) Use provided sample inputs (same columns as Kaggle features, without SalePrice/Id)
+python -m src.predict --csv-in ".\data\sample_inputs_kaggle.csv" --csv-out ".\predictions_kaggle.csv" --confidence 80
+```
+
 ### 3) Predict with the saved model (CLI)
 Interactive mode (you will be prompted for each feature):
 ```powershell
