@@ -55,6 +55,17 @@ Confidence intervals:
 ```powershell
 python -m src.predict --values 8.3252 41 6.9841 1.0238 322 2.5556 37.88 -122.23 --confidence 78
 ```
+Batch predictions (CSV):
+```powershell
+# Input CSV must contain columns: MedInc, HouseAge, AveRooms, AveBedrms, Population, AveOccup, Latitude, Longitude
+python -m src.predict --csv-in data/sample_inputs.csv --csv-out predictions.csv --confidence 80
+```
+
+JSON output (single or batch):
+```powershell
+python -m src.predict --values 8.3252 41 6.9841 1.0238 322 2.5556 37.88 -122.23 --confidence 78 --json
+python -m src.predict --csv-in data/sample_inputs.csv --confidence 80 --json > predictions.json
+```
 Example output:
 ```
 Predicted median house value: $392,790
