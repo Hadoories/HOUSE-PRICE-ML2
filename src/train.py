@@ -13,7 +13,7 @@ from sklearn.datasets import fetch_california_housing
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV, KFold, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -54,6 +54,44 @@ def build_models() -> Dict[str, Pipeline]:
 	return models
 
 
+def tune_model(
+	name: str,
+	pipeline: Pipeline,
+	X_train: pd.DataFrame,
+	y_train: pd.Series,
+) -> Tuple[Pipeline, Dict]:
+	"""
+	Tune the model using GridSearchCV where applicable. Returns best estimator and CV summary.
+	"""
+	if name == "RandomForestRegressor":
+		param_grid = {
+			"regressor__n_estimators": [200, 300, 500],
+			"regressor__max_depth": [None, 12, 20],
+			"regressor__min_samples_leaf": [1, 2, 4],
+		}
+		cv = KFold(n_splits=3, shuffle=True, random_state=42)
+		search = GridSearchCV(
+			estimator=pipeline,
+			param_grid=param_grid,
+			scoring="neg_root_mean_squared_error",
+			cv=cv,
+			n_jobs=-1,
+			refit=True,
+			verbose=0,
+		)
+		search.fit(X_train, y_train)
+		best_estimator: Pipeline = search.best_estimator_
+		cv_summary = {
+			"best_params": search.best_params_,
+			"best_score_neg_rmse": float(search.best_score_),
+		}
+		return best_estimator, cv_summary
+
+	# LinearRegression: no tuning; fit directly
+	pipeline.fit(X_train, y_train)
+	return pipeline, {"best_params": {}, "best_score_neg_rmse": None}
+
+
 def evaluate_model(
 	model: Pipeline,
 	X_train: pd.DataFrame,
@@ -84,12 +122,25 @@ def compute_residual_quantiles(y_true: pd.Series, y_pred: np.ndarray, percentile
 	return {f"p{p}": float(v) for p, v in zip(percentiles, quantile_values)}
 
 
+def compute_abs_residual_quantiles(y_true: pd.Series, y_pred: np.ndarray, percentiles: List[int]) -> Dict[str, float]:
+	"""
+	Compute absolute residual quantiles |y - y_hat| for percentiles [1..99],
+	for split-conformal symmetric intervals.
+	"""
+	abs_residuals = np.abs(np.asarray(y_true) - np.asarray(y_pred)).astype(float)
+	quantile_values = np.percentile(abs_residuals, percentiles).astype(float)
+	return {f"p{p}": float(v) for p, v in zip(percentiles, quantile_values)}
+
+
 def save_artifacts(
 	best_name: str,
 	best_pipeline: Pipeline,
 	metrics_by_model: Dict[str, Dict[str, float]],
 	feature_names: List[str],
 	residual_quantiles: Dict[str, float] | None = None,
+	calibration_abs_residual_quantiles: Dict[str, float] | None = None,
+	calibration_size: int | None = None,
+	cv_summaries: Dict[str, Dict] | None = None,
 ) -> None:
 	"""
 	Save the trained pipeline and metadata (metrics and feature names).
@@ -110,6 +161,10 @@ def save_artifacts(
 		"feature_names": feature_names,
 		"dataset": "sklearn.datasets.fetch_california_housing",
 		"residual_quantiles": residual_quantiles or {},
+		"calibration_abs_residual_quantiles": calibration_abs_residual_quantiles or {},
+		"calibration_size": calibration_size or 0,
+		"conformal_method": "split_conformal_symmetric_abs_residual",
+		"cv_summaries": cv_summaries or {},
 		"target_units": "hundred_thousands_usd",
 	}
 	with meta_path.open("w", encoding="utf-8") as fp:
@@ -118,23 +173,29 @@ def save_artifacts(
 
 def main() -> None:
 	X, y, feature_names = load_dataset()
-	X_train, X_test, y_train, y_test = train_test_split(
-		X, y, test_size=0.2, random_state=42
-	)
+	# 60/20/20 split: train/calibration/test
+	X_train_temp, X_test, y_train_temp, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+	X_train, X_cal, y_train, y_cal = train_test_split(X_train_temp, y_train_temp, test_size=0.25, random_state=42)
 
 	models = build_models()
 	metrics_by_model: Dict[str, Dict[str, float]] = {}
+	cv_summaries: Dict[str, Dict] = {}
 	scores_for_selection: List[Tuple[str, float]] = []
 
 	for name, pipeline in models.items():
-		metrics = evaluate_model(pipeline, X_train, X_test, y_train, y_test)
+		# Tune on training split
+		best_estimator, cv_summary = tune_model(name, pipeline, X_train, y_train)
+		cv_summaries[name] = cv_summary
+		# Evaluate on test split
+		metrics = evaluate_model(best_estimator, X_train, X_test, y_train, y_test)
 		metrics_by_model[name] = metrics
 		scores_for_selection.append((name, metrics["rmse"]))
 		print(f"{name}: RMSE={metrics['rmse']:.4f}  MAE={metrics['mae']:.4f}  R2={metrics['r2']:.4f}")
 
 	# Select the model with the lowest RMSE
 	best_name, _ = min(scores_for_selection, key=lambda pair: pair[1])
-	best_pipeline = models[best_name]
+	# Re-tune to obtain the best estimator for the chosen model
+	best_pipeline, _ = tune_model(best_name, models[best_name], X_train, y_train)
 
 	# Compute residual quantiles on the held-out test set for the best model (before refitting on all data)
 	# We store p1..p99 so that arbitrary confidence levels (e.g., 78%) can be requested later.
@@ -142,9 +203,23 @@ def main() -> None:
 	y_test_pred_for_best = best_pipeline.predict(X_test)
 	residual_quantiles = compute_residual_quantiles(y_test, y_test_pred_for_best, percentiles)
 
+	# Split-conformal: absolute residuals on calibration set
+	y_cal_pred = best_pipeline.predict(X_cal)
+	calibration_abs_residual_quantiles = compute_abs_residual_quantiles(y_cal, y_cal_pred, percentiles)
+	calibration_size = int(len(y_cal))
+
 	# Refit on all data for final model
 	best_pipeline.fit(X, y)
-	save_artifacts(best_name, best_pipeline, metrics_by_model, feature_names, residual_quantiles=residual_quantiles)
+	save_artifacts(
+		best_name,
+		best_pipeline,
+		metrics_by_model,
+		feature_names,
+		residual_quantiles=residual_quantiles,
+		calibration_abs_residual_quantiles=calibration_abs_residual_quantiles,
+		calibration_size=calibration_size,
+		cv_summaries=cv_summaries,
+	)
 	print(f"\nBest model: {best_name}")
 	print("Saved pipeline to 'house_price_ml/models/best_model.joblib' and metadata to 'house_price_ml/models/metadata.json'.")
 

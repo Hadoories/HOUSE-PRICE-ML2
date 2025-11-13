@@ -101,10 +101,22 @@ def _compute_interval_linear(
 	metadata: Dict,
 ) -> List[float]:
 	"""
-	For linear models, use saved residual quantiles to form an empirical interval:
-	lower = pred + Q(residual, tail), upper = pred + Q(residual, 1 - tail).
-	If residual quantiles are unavailable, fallback to Normal approximation using RMSE.
+	For linear models, prefer conformal absolute residual quantiles if available.
+	Fallback: use residual quantiles or Normal approximation using RMSE.
 	"""
+	# Prefer conformal if present
+	cal_qs: Dict[str, float] = metadata.get("calibration_abs_residual_quantiles", {}) or {}
+	cal_size = int(metadata.get("calibration_size", 0) or 0)
+	if cal_qs and cal_size > 0:
+		alpha = max(0.5, min(confidence_pct / 100.0, 0.999))
+		# Split-conformal symmetric interval uses q = quantile of |residual| at level ceil((n+1)*(1-alpha))/n
+		level = (np.ceil((cal_size + 1) * (1.0 - alpha)) / cal_size) if cal_size > 0 else (1.0 - alpha)
+		level_pct = int(min(99, max(1, round(level * 100))))
+		key = f"p{level_pct}"
+		if key in cal_qs:
+			q_abs = float(cal_qs[key])
+			return [prediction - q_abs, prediction + q_abs]
+
 	alpha = max(0.5, min(confidence_pct / 100.0, 0.999))
 	tail = (1.0 - alpha) / 2.0
 	lower_q_pct = int(round(tail * 100))
@@ -209,7 +221,22 @@ def main() -> None:
 		input_frame = df[feature_names].copy()
 		preds = model_pipeline.predict(input_frame).astype(float)
 
-		if best_model_name == "RandomForestRegressor":
+		# Prefer conformal intervals if available
+		cal_qs: Dict[str, float] = metadata.get("calibration_abs_residual_quantiles", {}) or {}
+		cal_size = int(metadata.get("calibration_size", 0) or 0)
+		if cal_qs and cal_size > 0:
+			alpha = max(0.5, min(args.confidence / 100.0, 0.999))
+			level = (np.ceil((cal_size + 1) * (1.0 - alpha)) / cal_size) if cal_size > 0 else (1.0 - alpha)
+			level_pct = int(min(99, max(1, round(level * 100))))
+			key = f"p{level_pct}"
+			if key in cal_qs:
+				q_abs = float(cal_qs[key])
+				lower = preds - q_abs
+				upper = preds + q_abs
+			else:
+				lower = preds
+				upper = preds
+		elif best_model_name == "RandomForestRegressor":
 			intervals = _compute_intervals_random_forest_batch(model_pipeline, input_frame, args.confidence)
 			lower = intervals[:, 0]
 			upper = intervals[:, 1]
@@ -279,7 +306,20 @@ def main() -> None:
 	input_frame = pd.DataFrame([values], columns=feature_names)
 	prediction = float(model_pipeline.predict(input_frame)[0])
 
-	if best_model_name == "RandomForestRegressor":
+	# Prefer conformal for single prediction if available
+	cal_qs: Dict[str, float] = metadata.get("calibration_abs_residual_quantiles", {}) or {}
+	cal_size = int(metadata.get("calibration_size", 0) or 0)
+	if cal_qs and cal_size > 0:
+		alpha = max(0.5, min(args.confidence / 100.0, 0.999))
+		level = (np.ceil((cal_size + 1) * (1.0 - alpha)) / cal_size) if cal_size > 0 else (1.0 - alpha)
+		level_pct = int(min(99, max(1, round(level * 100))))
+		key = f"p{level_pct}"
+		if key in cal_qs:
+			q_abs = float(cal_qs[key])
+			lower, upper = prediction - q_abs, prediction + q_abs
+		else:
+			lower, upper = prediction, prediction
+	elif best_model_name == "RandomForestRegressor":
 		lower, upper = _compute_interval_random_forest(model_pipeline, input_frame, prediction, args.confidence)
 	else:
 		lower, upper = _compute_interval_linear(prediction, args.confidence, metadata)

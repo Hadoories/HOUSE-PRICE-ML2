@@ -34,10 +34,10 @@ Option B (from the parent folder):
 python -m house_price_ml.src.train
 ```
 Outputs:
-- Trains Linear Regression and Random Forest
+- Trains Linear Regression and Random Forest (with basic CV tuning for RF)
 - Prints RMSE / MAE / R² on the test set
 - Saves the best pipeline to `house_price_ml/models/best_model.joblib`
-- Saves metadata (features, metrics) to `house_price_ml/models/metadata.json`
+- Saves metadata (features, metrics, CV summary, conformal calibration stats) to `house_price_ml/models/metadata.json`
 
 ### 3) Predict with the saved model (CLI)
 Interactive mode (you will be prompted for each feature):
@@ -73,8 +73,8 @@ Price range: $340,000 – $445,000
 Confidence: 78%
 ```
 Notes on intervals:
-- For RandomForest, the range is computed from per-tree prediction quantiles.
-- For LinearRegression, an empirical range is built from held-out test residuals saved during training; if unavailable, a Normal approximation based on RMSE is used.
+- Uses split-conformal symmetric intervals based on calibration absolute residuals (valid coverage under exchangeability).
+- If calibration stats are missing, falls back to: RF per-tree quantiles or empirical residuals/normal approx.
 
 Feature order (California Housing):
 1. MedInc (median income in block group, in tens of thousands)
