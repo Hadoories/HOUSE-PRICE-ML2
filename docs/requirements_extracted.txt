@@ -1,0 +1,26 @@
+H O U S E  P R I C E  P R E D I C T I O N  
+U S I N G  M AC H I N E  L E A R N I N G
+
+OV E RV I E W  &  O B J E C T I V E
+
+
+
+
+
+DATA  S E T :  H O U S E  P R I C E S  A DVA N C E D  R E G R E S S I O N
+
+
+
+
+
+
+
+
+
+
+
+A P P R OAC H
+
+
+
+

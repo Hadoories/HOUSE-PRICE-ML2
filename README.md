@@ -34,10 +34,17 @@ Option B (from the parent folder):
 python -m house_price_ml.src.train
 ```
 Outputs:
-- Trains Linear Regression and Random Forest (with basic CV tuning for RF)
+- Trains Linear Regression, Random Forest (with CV tuning), and Gradient Boosting (with CV tuning)
 - Prints RMSE / MAE / R² on the test set
 - Saves the best pipeline to `house_price_ml/models/best_model.joblib`
 - Saves metadata (features, metrics, CV summary, conformal calibration stats) to `house_price_ml/models/metadata.json`
+- Saves evaluation plots to `house_price_ml/models/plots/` (pred vs actual, residuals, feature importances)
+
+Use a Kaggle/CSV dataset:
+```powershell
+# Example: Kaggle House Prices - copy train.csv locally, then run:
+python -m src.train --dataset csv --csv-path C:\path\to\train.csv --target SalePrice --drop-cols Id --plots-dir models/plots
+```
 
 ### 3) Predict with the saved model (CLI)
 Interactive mode (you will be prompted for each feature):
@@ -75,6 +82,10 @@ Confidence: 78%
 Notes on intervals:
 - Uses split-conformal symmetric intervals based on calibration absolute residuals (valid coverage under exchangeability).
 - If calibration stats are missing, falls back to: RF per-tree quantiles or empirical residuals/normal approx.
+
+CSV predictions with trained CSV model:
+- Ensure your input CSV has the same raw columns used at training time (metadata `feature_names`).
+- The CLI will handle preprocessing (imputation/encoding/scaling) automatically.
 
 Feature order (California Housing):
 1. MedInc (median income in block group, in tens of thousands)
