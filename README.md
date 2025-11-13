@@ -1,0 +1,97 @@
+## House Price Prediction (California Housing) - Python ML Project
+
+This project trains a machine learning model to predict median house prices using the California Housing dataset. It includes:
+- A training script that evaluates multiple models and saves the best one
+- A CLI predictor that loads the saved model and performs predictions
+
+### 1) Setup (Windows PowerShell)
+Option A — run from inside this folder (standalone project):
+1. Open PowerShell in this folder.
+2. Create and activate a virtual environment:
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   ```
+3. Install dependencies:
+   ```powershell
+   pip install -r requirements.txt
+   ```
+
+Option B — run from the parent directory (if this folder is nested in another project):
+1. Open PowerShell in the parent folder.
+2. Create/activate venv there, then:
+   ```powershell
+   pip install -r house_price_ml/requirements.txt
+   ```
+
+### 2) Train the model
+Option A (inside this folder):
+```powershell
+python -m src.train
+```
+Option B (from the parent folder):
+```powershell
+python -m house_price_ml.src.train
+```
+Outputs:
+- Trains Linear Regression and Random Forest
+- Prints RMSE / MAE / R² on the test set
+- Saves the best pipeline to `house_price_ml/models/best_model.joblib`
+- Saves metadata (features, metrics) to `house_price_ml/models/metadata.json`
+
+### 3) Predict with the saved model (CLI)
+Interactive mode (you will be prompted for each feature):
+```powershell
+python -m src.predict
+```
+
+One-line mode (pass all 8 features in order):
+```powershell
+python -m src.predict --values 8.3252 41 6.9841 1.0238 322 2.5556 37.88 -122.23
+```
+
+Confidence intervals:
+- Add the `--confidence` flag (percentage) to get a price range at that confidence level. Default is 80.
+```powershell
+python -m src.predict --values 8.3252 41 6.9841 1.0238 322 2.5556 37.88 -122.23 --confidence 78
+```
+Example output:
+```
+Predicted median house value: $392,790
+Price range: $340,000 – $445,000
+Confidence: 78%
+```
+Notes on intervals:
+- For RandomForest, the range is computed from per-tree prediction quantiles.
+- For LinearRegression, an empirical range is built from held-out test residuals saved during training; if unavailable, a Normal approximation based on RMSE is used.
+
+Feature order (California Housing):
+1. MedInc (median income in block group, in tens of thousands)
+2. HouseAge (median house age in years)
+3. AveRooms (average rooms)
+4. AveBedrms (average bedrooms)
+5. Population
+6. AveOccup (average occupants per household)
+7. Latitude
+8. Longitude
+
+### Project Structure
+```
+house_price_ml/
+  README.md
+  requirements.txt
+  .gitignore
+  models/
+    (saved models and metadata)
+  src/
+    __init__.py
+    train.py
+    predict.py
+```
+
+### Notes
+- The dataset will download on first run; ensure you have internet access.
+- If you retrain, the best model and metadata will be overwritten.
+- All features are numeric; units are as provided in the California Housing dataset.
+
+
